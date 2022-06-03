@@ -56,6 +56,12 @@ def perspective(a,r,n,f):
         [0,0,-scale*n,0]
     ])
 
+def to3d(vec4):
+    return np.array(vec4).ravel()[0:3]
+
+def to2d(vec4):
+    return np.array(vec4).ravel()[0:2]
+
 #------------------------------------------------------------------
 # CLASSES
 #------------------------------------------------------------------
@@ -82,6 +88,7 @@ class Camera():
         ])
 
     def set_orientation(self, p, v):
+        self.eye = p - v
         tmp = np.array([0,1,0])
         f = v - p
         f = f / np.linalg.norm(f)
@@ -103,12 +110,6 @@ class Camera():
         model.transform(self.orientation)
 
     def toNDC(self, model):
-        '''
-        for tri in range(len(model.triangles)):
-            for p in range(len(model.triangles[tri])):
-                model.triangles[tri][p] = model.triangles[tri][p] @ self.perspective 
-                model.triangles[tri][p] = model.triangles[tri][p] / float(model.triangles[tri][p].T[3]) 
-        '''
         model.transform(self.perspective)
         model.apply(lambda x: x / float(x.T[3]))
 
@@ -121,48 +122,69 @@ class Camera():
 
 
 class Model():
-    triangles = [[]]
+    triangles = []
 
     def __init__(self): pass
 
     def parse(self, file):
         with open(file, "r") as f:
-            for (c,l) in enumerate(f.readlines()):
-                if (c != 0): self.triangles.append([])
-                nums = [float(x) for x in l.split() if x not in ['', '\n']]
-                self.triangles[c] = [np.array(nums[i:i+3] + [1]) for i in range(0, len(nums), 3)]
+            for l in f.readlines():
+                tri = Triangle()
+                tri.parse(l)
+                if tri is not None:
+                    self.triangles.append(tri)
     
     def transform(self, mat):
-        for tri in range(len(self.triangles)):
-            for p in range(len(self.triangles[tri])):
-                self.triangles[tri][p] = self.triangles[tri][p] @ mat
+        for tri in self.triangles: 
+            tri.transform(mat)
 
     def apply(self, fn):
-        for tri in range(len(self.triangles)):
-            for p in range(len(self.triangles[tri])):
-                self.triangles[tri][p] = fn(self.triangles[tri][p])
+        for tri in self.triangles:
+            tri.apply(fn)
     
     def append(self, tri):
-        if len(self.triangles) == 1:
-            self.triangles[0] = tri
-        else:
-            self.triangles.append(tri)
+        self.triangles.append(tri)
+
+class Triangle():
+    def __init__(self): pass
+
+    def __str__(self):
+        rep = ""
+        for i in range(len(self.vertices)):
+            rep += "v" + str(i+1) + ": ["
+            for j in range(len(self.vertices[i])):
+                rep += str(self.vertices[i][j])
+                if (j < 3): rep += ", "
+            rep += "]"
+            if (i < 2): rep += ", "
+        return rep
+
+    def parse(self, s):
+        nums = [float(x) for x in s.split() if x not in ['', '\n']]
+        assert len(nums) == 9
+        self.vertices = [np.array(nums[i:i+3] + [1]) for i in range(0, len(nums), 3)]
+
+    def transform(self, mat):
+        self.vertices[:] = (v @ mat for v in self.vertices)
+
+    def apply(self, fn):
+        self.vertices[:] = (fn(v) for v in self.vertices)
+
+    def normal(self):
+        v1 = to3d(self.vertices[1]) - to3d(self.vertices[0])
+        v2 = to3d(self.vertices[2]) - to3d(self.vertices[0])
+        return np.cross(v1, v2)
+
+    def sub(self, vec4):
+        return to3d(self.vertices[0]) - vec4
     
-    def toDraw(self):
-        '''
-        acc = []
-        for tri in range(len(self.triangles)):
-            acc.append([])
-            for p in self.triangles[tri]:
-                print(
-                acc[tri].append(p[0])
-        '''
-        return [[tuple(p.tolist()[0][0:2]) for p in tri] for tri in self.triangles]
+    def draw(self):
+        return [tuple(to2d(v)) for v in self.vertices]
+
 
 mew = Model()
 mew.parse("assets/Mewtwo_lp.raw")
 #mew.append(np.array([[-.5,-.5,-.5,1],[0,1,.5,1],[.5,.5,.5,1]]))
-
 #mew.transform(rotate(np.pi /4,0,np.pi/3))
 #mew.transform(scale(10,10,10))
 mew.transform(trans(1,1,1))
@@ -183,9 +205,8 @@ cam.toWindow(mew)
 image = Image.new("RGB", (imgy, imgx))
 draw = ImageDraw.Draw(image)
 
-triangles = mew.toDraw()
-print(triangles)
-for tri in triangles:
-    draw.polygon(tri, fill = (255,255,255))
+for tri in mew.triangles:
+    if (np.dot(tri.normal(), tri.sub(cam.eye)) > 0):
+        draw.polygon(tri.draw(), fill = (255,255,255))
 
 image.save("test.png", "PNG")
