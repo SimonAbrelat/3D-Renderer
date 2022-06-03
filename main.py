@@ -88,9 +88,9 @@ class Camera():
         ])
 
     def set_orientation(self, p, v):
-        self.eye = p - v
         tmp = np.array([0,1,0])
         f = v - p
+        self.eye = f
         f = f / np.linalg.norm(f)
         r = np.cross(tmp, f)
         r = r / np.linalg.norm(r)
@@ -113,18 +113,18 @@ class Camera():
         model.transform(self.perspective)
         model.apply(lambda x: x / float(x.T[3]))
 
-
     def toWindow(self, model):
         model.transform(self.window)
 
-    #def toDraw(self, model):
-    #    return [[tuple(vert[0:2]) for vert in tri] for tri in model.triangles]
-
+    def view(self, model):
+        model.transform(self.orientation @ self.perspective)
+        model.apply(lambda x: x / float(x.T[3]))
+        model.transform(self.window)
 
 class Model():
     triangles = []
-
-    def __init__(self): pass
+    def __init__(self, diffuse):
+        self.m_diff = diffuse
 
     def parse(self, file):
         with open(file, "r") as f:
@@ -148,7 +148,7 @@ class Model():
 class Triangle():
     def __init__(self): pass
 
-    def __str__(self):
+    def __repr__(self):
         rep = ""
         for i in range(len(self.vertices)):
             rep += "v" + str(i+1) + ": ["
@@ -164,40 +164,47 @@ class Triangle():
         assert len(nums) == 9
         self.vertices = [np.array(nums[i:i+3] + [1]) for i in range(0, len(nums), 3)]
 
+        v1 = to3d(self.vertices[1]) - to3d(self.vertices[0])
+        v2 = to3d(self.vertices[2]) - to3d(self.vertices[0])
+        self.normal = np.cross(v1, v2)
+
     def transform(self, mat):
         self.vertices[:] = (v @ mat for v in self.vertices)
 
     def apply(self, fn):
         self.vertices[:] = (fn(v) for v in self.vertices)
 
-    def normal(self):
-        v1 = to3d(self.vertices[1]) - to3d(self.vertices[0])
-        v2 = to3d(self.vertices[2]) - to3d(self.vertices[0])
-        return np.cross(v1, v2)
-
-    def sub(self, vec4):
-        return to3d(self.vertices[0]) - vec4
+    def sub(self, vec3):
+        return to3d(self.vertices[0]) - vec3
     
     def draw(self):
         return [tuple(to2d(v)) for v in self.vertices]
 
+    def light(self, light, diffuse):
+        dot = np.dot(self.normal, self.sub(light.position))
+        return tuple([int(x) for x in (light.color * diffuse * max(0, dot))])
 
-mew = Model()
-mew.parse("assets/Mewtwo_lp.raw")
-#mew.append(np.array([[-.5,-.5,-.5,1],[0,1,.5,1],[.5,.5,.5,1]]))
-#mew.transform(rotate(np.pi /4,0,np.pi/3))
-#mew.transform(scale(10,10,10))
-mew.transform(trans(1,1,1))
+class Light():
+    def __init__(self, pos, color):
+        self.position = pos
+        self.color = color
+
+light = Light(np.array([0,0,10]), np.array([255,0,0]))
+
+mod = Model(1/(4*np.pi))
+mod.parse("assets/shark_ag.raw")
+#mod.transform(rotate(0,np.pi,0))
+mod.transform(scale(.5,.5,.5))
+#mod.transform(trans(0,-5,20))
 
 cam = Camera(aspect, fov, 1, 100, imgx, imgy)
-cam.set_orientation(np.array([20,50,20]), np.array([0,2,0]))
-cam.toClip(mew)
-cam.toNDC(mew)
-cam.toWindow(mew)
-#mew.toList()
-#print(mew.toList())
-#print(mew.triangles)
-#print([list(tri) for tri in mew.triangles])
+cam.set_orientation(np.array([0,0,10]), np.array([0,0,0]))
+cam.view(mod)
+
+'''
+So right now the axes are kind of confusing
+it seems like the the camera orientation v1 is the side, v2 in front, and v3 above
+'''
 
 #------------------------------------------------------------------
 # Image Generation 
@@ -205,8 +212,8 @@ cam.toWindow(mew)
 image = Image.new("RGB", (imgy, imgx))
 draw = ImageDraw.Draw(image)
 
-for tri in mew.triangles:
-    if (np.dot(tri.normal(), tri.sub(cam.eye)) > 0):
-        draw.polygon(tri.draw(), fill = (255,255,255))
+for tri in mod.triangles:
+    if (np.dot(tri.normal, tri.sub(cam.eye)) > 0):
+        draw.polygon(tri.draw(), fill = tri.light(light,mod.m_diff))
 
 image.save("test.png", "PNG")
