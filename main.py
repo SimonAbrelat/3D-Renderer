@@ -5,7 +5,7 @@ import numpy as np
 # CONSTANTS 
 #------------------------------------------------------------------
 aspect = 16.0/9.0
-fov = (np.pi) / 2 # 90 degs
+fov = (np.pi) * (100/180)  
 imgy = 1080 
 imgx = int(imgy * aspect)
 
@@ -110,7 +110,7 @@ class Triangle():
             self.normal = np.array([0,0,0])
             return
 
-        self.normal = unit(np.cross(s1,s2))
+        self.normal = unit(np.cross(s2,s1))
         self.vertices = [v0,v1,v2]
         self.color = (0,0,0)
     
@@ -172,15 +172,15 @@ class Light():
 #------------------------------------------------------------------
 # Graphic Processing 
 #------------------------------------------------------------------
-light = Light(np.array([100,100,0]), np.array([255,255,255]))
+light = Light(np.array([0,-10,-50]), np.array([255,255,255]))
 
 cam = Camera(aspect, fov, 1, 100, imgx, imgy)
-cam.look_at(np.array([0,0,-50]), np.array([0,0,0]))
+cam.look_at(np.array([0,20,-20]), np.array([0,0,0]))
 
 mod = Model(1)
-mod.parse("assets/eiffel_ag.raw")
+mod.parse("assets/shark_ag.raw")
 
-mod.modify(trans(0,-20,0), scale(.5,.5,.5), rotate(0,0,0))
+mod.modify(trans(5,0,0), scale(1.5,1.5,1.5), rotate(0,np.pi/3,np.pi/4))
 cam.toClip(mod)
 mod.color(light)
 cam.toNDC(mod)
